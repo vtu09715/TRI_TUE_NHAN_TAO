@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hệ Thống Điểm Danh Thông Minh</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; }
+        .container { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-primary { background: #1877f2; color: white; }
+        .btn-danger { background: #e41e3f; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .flex { display: flex; gap: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        #video_feed { width: 100%; border-radius: 10px; background: #000; }
+        .buoi-item { padding: 15px; border: 1px solid #eee; margin-bottom: 10px; cursor: pointer; border-radius: 8px; }
+        .buoi-item:hover { background: #f0f7ff; border-color: #1877f2; }
+        #list_content p { background: #e7f3ff; padding: 10px; border-radius: 5px; margin: 5px 0; border-left: 4px solid #1877f2; }
+    </style>
+</head>
+<body>
+<div class="container">
+    {% if view == 'login' %}
+    <div class="card" style="width: 350px; margin: 100px auto; text-align: center;">
+        <h2 style="color: #1877f2;">ĐĂNG NHẬP</h2>
+        {% if error %}<p style="color:red">{{error}}</p>{% endif %}
+        <form action="/login" method="POST">
+            <input type="text" name="username" placeholder="Tài khoản" style="width:100%; padding:12px; margin:10px 0; border:1px solid #ddd; border-radius:6px; box-sizing: border-box;" required>
+            <input type="password" name="password" placeholder="Mật khẩu" style="width:100%; padding:12px; margin:10px 0; border:1px solid #ddd; border-radius:6px; box-sizing: border-box;" required>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Đăng nhập</button>
+        </form>
+    </div>
+
+    {% elif view == 'giaovien' %}
+    <div class="card flex" style="justify-content: space-between; align-items: center;">
+        <h3>👨‍🏫 GV: {{ gv_info[0] }} ({{ gv_info[1] }})</h3>
+        <a href="/logout" class="btn btn-danger">Đăng xuất</a>
+    </div>
+    <div class="flex">
+        <div class="card" style="width: 350px;">
+            <h4>📅 Lịch dạy</h4>
+            {% for b in buoi_hocs %}
+            <div class="buoi-item" onclick="startAtt('{{ b[0] }}', '{{ b[1] }}')">
+                <strong>{{ b[1] }}</strong><br><small>{{ b[2] }} - Phòng: {{ b[3] }}</small>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="card" style="flex: 1;">
+            <h3 id="m_title">Chọn môn học để bắt đầu</h3>
+            <div id="cam_div" style="display: none;">
+                <img id="video_feed" src="">
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="btn btn-danger" onclick="stopAtt()" style="flex:1">Dừng điểm danh</button>
+                    <button class="btn btn-success" onclick="exportEx()" style="flex:1">📊 Xuất File Excel</button>
+                </div>
+                <div id="list_content" style="margin-top: 20px; max-height: 350px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    {% elif view == 'sinhvien' %}
+    <div class="card flex" style="justify-content: space-between; align-items: center;">
+        <h2>🎓 SV: {{ sv[2] }} ({{ sv[1] }})</h2>
+        <a href="/logout" class="btn btn-danger">Đăng xuất</a>
+    </div>
+    <div class="flex">
+        <div class="card" style="flex: 1;">
+            <h4>📝 Lịch sử điểm danh</h4>
+            <table>
+                <tr><th>Môn học</th><th>Ngày</th><th>Thời gian</th><th>Trạng thái</th></tr>
+                {% for h in history %}
+                <tr><td>{{ h[0] }}</td><td>{{ h[1] }}</td><td>{{ h[2] }}</td><td style="color:green; font-weight:bold;">{{ h[3] }}</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+        <div class="card" style="width: 350px; text-align: center;">
+            <h4>📁 Cập nhật khuôn mặt</h4>
+            <input type="file" id="fileInput" accept="image/*" style="display:none">
+            <button class="btn btn-primary" onclick="$('#fileInput').click()" style="width:100%">Chọn ảnh (.jpg)</button>
+            <img id="imgPreview" style="max-width:100%; margin-top:15px; display:none; border-radius:8px;">
+            <button id="btnUpload" class="btn btn-danger" style="display:none; width:100%; margin-top:10px">Xác nhận tải lên</button>
+            <p id="msg" style="margin-top:10px; font-weight:bold;"></p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    let logInterval;
+    let currentId = null;
+
+    function startAtt(id, name) {
+        currentId = id;
+        $('#m_title').text("Môn: " + name);
+        $('#cam_div').show();
+        $('#video_feed').attr('src', '/video_feed');
+        $.get('/start_session/' + id, function() {
+            if(logInterval) clearInterval(logInterval);
+            refreshList();
+            logInterval = setInterval(refreshList, 2000);
+        });
+    }
+
+    function refreshList() {
+        $.getJSON('/get_attendance', function(data) {
+            let h = "<h4>Đã có mặt ("+data.length+"):</h4>";
+            data.slice().reverse().forEach(s => {
+                h += `<p>✅ <b>${s.name}</b> (${s.ms}) - <i>${s.time}</i></p>`;
+            });
+            $('#list_content').html(h);
+        });
+    }
+
+    function stopAtt() { clearInterval(logInterval); $.get('/stop_session', () => location.reload()); }
+    
+    function exportEx() {
+        if(currentId) window.location.href = '/export_excel/' + currentId;
+    }
+
+    $('#fileInput').change(function(e) {
+        if (e.target.files[0]) {
+            let reader = new FileReader();
+            reader.onload = (ev) => { $('#imgPreview').attr('src', ev.target.result).show(); $('#btnUpload').show(); }
+            reader.readAsDataURL(e.target.files[0]);
+        }
+    });
+
+    $('#btnUpload').click(function() {
+        let formData = new FormData();
+        formData.append('file', $('#fileInput')[0].files[0]);
+        $('#msg').text("Đang xử lý...").css('color', 'blue');
+        $.ajax({
+            url: '/update_face_file',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: (res) => { $('#msg').text("Thành công!").css('color', 'green'); $('#btnUpload').hide(); }
+        });
+    });
+</script>
+</body>
+</html>
